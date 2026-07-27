@@ -1,0 +1,18 @@
+# Model files (large binary files)
+*.gguf
+
+# Environment files
+.env
+
+# Docker volumes
+/volumes
+
+# Ollama data
+/root/.ollama/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -39,6 +39,71 @@ services:
     networks:
       - app-net
 
+  markitdown-mcp:
+    build:
+      context: ./mcps/markitdown-mcp
+      dockerfile: Dockerfile
+    container_name: markitdown-mcp
+    command: ["--http", "--host", "0.0.0.0", "--port", "3001"]
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - ./:/workdir:ro
+    restart: unless-stopped
+    networks:
+      - app-net
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    ports:
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+    volumes:
+      - qdrant-storage:/qdrant/storage
+    environment:
+      QDRANT__TELEMETRY_DISABLED: "true"
+    restart: unless-stopped
+    networks:
+      - qdrant-net
+
+  qdrant-mcp:
+    build:
+      context: ./mcps/mcp-server-qdrant
+      dockerfile: Dockerfile
+    container_name: qdrant-mcp
+    command:
+      [
+        "--transport",
+        "streamable-http",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+      ]
+    depends_on:
+      - qdrant
+    environment:
+      QDRANT_URL: "http://qdrant:6333"
+      COLLECTION_NAME: "project-memory"
+      EMBEDDING_PROVIDER: "fastembed"
+      EMBEDDING_MODEL: "sentence-transformers/all-MiniLM-L6-v2"
+      FASTEMBED_CACHE_PATH: "/opt/fastembed-cache"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      FASTMCP_HOST: "0.0.0.0"
+      FASTMCP_PORT: "8000"
+    ports:
+      - "127.0.0.1:3002:8000"
+    restart: unless-stopped
+    networks:
+      - qdrant-net
+
 networks:
   app-net:
     driver: bridge
+  qdrant-net:
+    driver: bridge
+
+volumes:
+  qdrant-storage:
