@@ -1,1 +1,4 @@
 *gguf
+.env.integrations
+.env.gitlab
+.env.jira
