@@ -1,0 +1,90 @@
+name: qwen-vlm-local
+
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    volumes:
+      - qdrant-storage:/qdrant/storage
+    environment:
+      QDRANT__TELEMETRY_DISABLED: "true"
+    restart: unless-stopped
+    networks:
+      - qdrant-net
+
+  qdrant-mcp:
+    image: qwen-vlm-local-qdrant-mcp:latest
+    build:
+      context: ./mcps/mcp-server-qdrant
+      dockerfile: Dockerfile
+    container_name: qdrant-mcp
+    command: ["--transport", "streamable-http", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      qdrant:
+        condition: service_started
+      memory-auth:
+        condition: service_healthy
+    env_file:
+      - ./.env.memory-mcp
+    environment:
+      QDRANT_URL: "http://qdrant:6333"
+      COLLECTION_NAME: "project-memory"
+      EMBEDDING_PROVIDER: "fastembed"
+      EMBEDDING_MODEL: "sentence-transformers/all-MiniLM-L6-v2"
+      FASTEMBED_CACHE_PATH: "/opt/fastembed-cache"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      FASTMCP_HOST: "0.0.0.0"
+      FASTMCP_PORT: "8000"
+      MCP_CORS_ORIGINS: "http://localhost:8000,http://127.0.0.1:8000"
+    ports:
+      - "3002:8000"
+    restart: unless-stopped
+    networks:
+      - qdrant-net
+
+  memory-auth-db:
+    image: postgres:15
+    container_name: memory-auth-db
+    env_file:
+      - ./.env.memory-db
+    volumes:
+      - memory-auth-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    networks:
+      - qdrant-net
+
+  memory-auth:
+    image: qwen-vlm-local-memory-auth:latest
+    build:
+      context: ./mcps/memory-auth
+      dockerfile: Dockerfile
+    container_name: memory-auth
+    env_file:
+      - ./.env.memory-auth
+    depends_on:
+      memory-auth-db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3006:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    networks:
+      - qdrant-net
+
+networks:
+  qdrant-net:
+    driver: bridge
+
+volumes:
+  qdrant-storage:
+  memory-auth-db:
