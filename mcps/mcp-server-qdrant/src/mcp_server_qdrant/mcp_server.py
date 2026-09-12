@@ -9,6 +9,7 @@ from qdrant_client import models
 from mcp_server_qdrant.common.filters import make_indexes
 from mcp_server_qdrant.common.func_tools import make_partial_function
 from mcp_server_qdrant.common.wrap_filters import wrap_filters
+from mcp_server_qdrant.auth import current_grant
 from mcp_server_qdrant.embeddings.base import EmbeddingProvider
 from mcp_server_qdrant.embeddings.factory import create_embedding_provider
 from mcp_server_qdrant.qdrant import ArbitraryFilter, Entry, Metadata, QdrantConnector
@@ -117,9 +118,15 @@ class QdrantMCPServer(FastMCP):
             """
             await ctx.debug(f"Storing information {information} in Qdrant")
 
+            grant = current_grant("memory:write")
+
             entry = Entry(content=information, metadata=metadata)
 
-            await self.qdrant_connector.store(entry, collection_name=collection_name)
+            await self.qdrant_connector.store(
+                entry,
+                collection_name=collection_name,
+                namespace=grant,
+            )
             if collection_name:
                 return f"Remembered: {information} in collection {collection_name}"
             return f"Remembered: {information}"
@@ -145,6 +152,8 @@ class QdrantMCPServer(FastMCP):
             # Log query_filter
             await ctx.debug(f"Query filter: {query_filter}")
 
+            grant = current_grant("memory:read")
+
             query_filter = models.Filter(**query_filter) if query_filter else None
 
             await ctx.debug(f"Finding results for query {query}")
@@ -154,6 +163,7 @@ class QdrantMCPServer(FastMCP):
                 collection_name=collection_name,
                 limit=self.qdrant_settings.search_limit,
                 query_filter=query_filter,
+                namespace=grant,
             )
             if not entries:
                 return None
@@ -171,15 +181,54 @@ class QdrantMCPServer(FastMCP):
             self.qdrant_settings.filterable_fields_dict_with_conditions()
         )
 
-        if len(filterable_conditions) > 0:
+        if (
+            self.qdrant_settings.collection_name
+            and len(filterable_conditions) == 0
+            and not self.qdrant_settings.allow_arbitrary_filter
+        ):
+            # Use real Python signatures for the common fixed-collection mode.
+            # FastMCP >=2.13 deliberately rejects synthetic signatures backed by
+            # *args/**kwargs when it removes Context before Pydantic validation.
+            async def find_fixed_collection(
+                ctx: Context,
+                query: Annotated[str, Field(description="What to search for")],
+            ) -> list[str] | None:
+                return await find(
+                    ctx,
+                    query,
+                    collection_name=self.qdrant_settings.collection_name,
+                    query_filter=None,
+                )
+
+            async def store_fixed_collection(
+                ctx: Context,
+                information: Annotated[str, Field(description="Text to store")],
+                metadata: Annotated[
+                    Metadata | None,
+                    Field(
+                        description="Extra metadata stored along with memorised information. Any json is accepted."
+                    ),
+                ] = None,
+            ) -> str:
+                return await store(
+                    ctx,
+                    information,
+                    collection_name=self.qdrant_settings.collection_name,
+                    metadata=metadata,
+                )
+
+            find_foo = find_fixed_collection
+            store_foo = store_fixed_collection
+        elif len(filterable_conditions) > 0:
             find_foo = wrap_filters(find_foo, filterable_conditions)
         elif not self.qdrant_settings.allow_arbitrary_filter:
             find_foo = make_partial_function(find_foo, {"query_filter": None})
 
-        if self.qdrant_settings.collection_name:
+        if self.qdrant_settings.collection_name and find_foo is find:
             find_foo = make_partial_function(
                 find_foo, {"collection_name": self.qdrant_settings.collection_name}
             )
+        if self.qdrant_settings.collection_name and store_foo is store:
             store_foo = make_partial_function(
                 store_foo, {"collection_name": self.qdrant_settings.collection_name}
             )

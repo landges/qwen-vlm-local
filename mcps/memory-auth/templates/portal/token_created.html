@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Токен выпущен</h1>
+<p><strong>Скопируйте его сейчас.</strong> После ухода со страницы токен больше не показывается.</p>
+<pre class="token">{{ raw_token }}</pre>
+<p class="muted">Namespace: {% if token.project %}project/{{ token.project.slug }}{% else %}space/{{ token.memory_space_id }}{% endif %}</p>
+<p><a class="button" href="{% url 'dashboard' %}">Готово</a></p>
+{% endblock %}

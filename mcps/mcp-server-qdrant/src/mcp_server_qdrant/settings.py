@@ -113,3 +113,9 @@ class QdrantSettings(BaseSettings):
                     "If 'local_path' is set, 'location' and 'api_key' must be None."
                 )
         return self
+
+
+class AuthSettings(BaseSettings):
+    introspection_url: str = Field(validation_alias="MEMORY_AUTH_INTROSPECTION_URL")
+    client_id: str = Field(default="qdrant-mcp", validation_alias="MEMORY_AUTH_CLIENT_ID")
+    introspection_secret: str = Field(validation_alias="INTROSPECTION_SECRET")

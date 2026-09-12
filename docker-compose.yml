@@ -53,52 +53,6 @@ services:
     networks:
       - app-net
 
-  qdrant:
-    image: qdrant/qdrant:latest
-    container_name: qdrant
-    ports:
-      - "127.0.0.1:6333:6333"
-      - "127.0.0.1:6334:6334"
-    volumes:
-      - qdrant-storage:/qdrant/storage
-    environment:
-      QDRANT__TELEMETRY_DISABLED: "true"
-    restart: unless-stopped
-    networks:
-      - qdrant-net
-
-  qdrant-mcp:
-    build:
-      context: ./mcps/mcp-server-qdrant
-      dockerfile: Dockerfile
-    container_name: qdrant-mcp
-    command:
-      [
-        "--transport",
-        "streamable-http",
-        "--host",
-        "0.0.0.0",
-        "--port",
-        "8000",
-      ]
-    depends_on:
-      - qdrant
-    environment:
-      QDRANT_URL: "http://qdrant:6333"
-      COLLECTION_NAME: "project-memory"
-      EMBEDDING_PROVIDER: "fastembed"
-      EMBEDDING_MODEL: "sentence-transformers/all-MiniLM-L6-v2"
-      FASTEMBED_CACHE_PATH: "/opt/fastembed-cache"
-      HF_HUB_OFFLINE: "1"
-      TRANSFORMERS_OFFLINE: "1"
-      FASTMCP_HOST: "0.0.0.0"
-      FASTMCP_PORT: "8000"
-    ports:
-      - "127.0.0.1:3002:8000"
-    restart: unless-stopped
-    networks:
-      - qdrant-net
-
   gitlab-mcp:
     profiles: ["integrations"]
     build:
@@ -144,13 +98,45 @@ services:
     networks:
       - integrations-net
 
+  sharkmcp-mvp:
+    profiles: ["pcap-mvp"]
+    build:
+      context: ./mcps/sharkmcp-mvp
+      dockerfile: Dockerfile
+    container_name: sharkmcp-mvp
+    volumes:
+      - ./pcaps:/pcaps:ro
+    ports:
+      - "127.0.0.1:3005:3005"
+    restart: unless-stopped
+    networks:
+      - integrations-net
+
+  pcap-analysis-mcp:
+    profiles: ["pcap"]
+    build:
+      context: ./mcps/pcap-analysis-mcp
+      dockerfile: Dockerfile
+    container_name: pcap-analysis-mcp
+    environment:
+      PCAP_ROOT: /pcaps
+      RESULT_ROOT: /data/results
+      MAX_OUTPUT_BYTES: "1048576"
+      COMMAND_TIMEOUT: "900"
+    volumes:
+      - ./pcaps:/pcaps:ro
+      - pcap-results:/data/results
+    ports:
+      - "127.0.0.1:3010:3010"
+    restart: unless-stopped
+    networks:
+      - integrations-net
+
 networks:
   app-net:
-    driver: bridge
-  qdrant-net:
     driver: bridge
   integrations-net:
     driver: bridge
 
 volumes:
-  qdrant-storage:
+  pcap-results:

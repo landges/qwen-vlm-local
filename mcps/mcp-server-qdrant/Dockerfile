@@ -12,9 +12,9 @@ COPY pyproject.toml README.md LICENSE ./
 
 RUN pip install \
     "fastembed>=0.6.0" \
-    "qdrant-client>=1.12.0" \
+    "qdrant-client==1.18.0" \
     "pydantic>=2.10.6,<2.12.0" \
-    "fastmcp==2.7.0"
+    "fastmcp==2.13.3"
 
 # Download and initialize the embedding model while network access is available
 # during the image build. Runtime starts with offline flags enabled.

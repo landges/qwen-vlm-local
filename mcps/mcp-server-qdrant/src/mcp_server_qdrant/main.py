@@ -1,4 +1,5 @@
 import argparse
+import os
 
 
 def main():
@@ -23,8 +24,36 @@ def main():
     # only after we make the changes.
     from mcp_server_qdrant.server import mcp
 
+    middleware = None
+    cors_origins = [
+        origin.strip()
+        for origin in os.getenv("MCP_CORS_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
+    if cors_origins:
+        from starlette.middleware import Middleware
+        from starlette.middleware.cors import CORSMiddleware
+
+        middleware = [
+            Middleware(
+                CORSMiddleware,
+                allow_origins=cors_origins,
+                allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+                allow_headers=[
+                    "Authorization",
+                    "Content-Type",
+                    "MCP-Protocol-Version",
+                    "Mcp-Session-Id",
+                    "Last-Event-ID",
+                ],
+                expose_headers=["Mcp-Session-Id"],
+                max_age=600,
+            )
+        ]
+
     mcp.run(
         transport=args.transport,
         host=args.host,
         port=args.port,
+        middleware=middleware,
     )

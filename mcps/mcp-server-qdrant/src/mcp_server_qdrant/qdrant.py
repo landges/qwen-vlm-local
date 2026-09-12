@@ -7,6 +7,13 @@ from qdrant_client import AsyncQdrantClient, models
 
 from mcp_server_qdrant.embeddings.base import EmbeddingProvider
 from mcp_server_qdrant.settings import METADATA_PATH
+from mcp_server_qdrant.auth import NamespaceGrant
+
+
+SCOPE_TYPE_PATH = "_scope_type"
+SCOPE_ID_PATH = "_scope_id"
+CREATED_BY_PATH = "_created_by"
+TOKEN_ID_PATH = "_token_id"
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +67,13 @@ class QdrantConnector:
         response = await self._client.get_collections()
         return [collection.name for collection in response.collections]
 
-    async def store(self, entry: Entry, *, collection_name: str | None = None):
+    async def store(
+        self,
+        entry: Entry,
+        *,
+        collection_name: str | None = None,
+        namespace: NamespaceGrant,
+    ):
         """
         Store some information in the Qdrant collection, along with the specified metadata.
         :param entry: The entry to store in the Qdrant collection.
@@ -78,7 +91,14 @@ class QdrantConnector:
 
         # Add to Qdrant
         vector_name = self._embedding_provider.get_vector_name()
-        payload = {"document": entry.content, METADATA_PATH: entry.metadata}
+        payload = {
+            "document": entry.content,
+            METADATA_PATH: entry.metadata,
+            SCOPE_TYPE_PATH: namespace.scope_type,
+            SCOPE_ID_PATH: namespace.scope_id,
+            CREATED_BY_PATH: namespace.subject,
+            TOKEN_ID_PATH: namespace.token_id,
+        }
         await self._client.upsert(
             collection_name=collection_name,
             points=[
@@ -97,6 +117,7 @@ class QdrantConnector:
         collection_name: str | None = None,
         limit: int = 10,
         query_filter: models.Filter | None = None,
+        namespace: NamespaceGrant,
     ) -> list[Entry]:
         """
         Find points in the Qdrant collection. If there are no entries found, an empty list is returned.
@@ -121,12 +142,30 @@ class QdrantConnector:
         vector_name = self._embedding_provider.get_vector_name()
 
         # Search in Qdrant
+        security_filter = models.Filter(
+            must=[
+                models.FieldCondition(
+                    key=SCOPE_TYPE_PATH,
+                    match=models.MatchValue(value=namespace.scope_type),
+                ),
+                models.FieldCondition(
+                    key=SCOPE_ID_PATH,
+                    match=models.MatchValue(value=namespace.scope_id),
+                ),
+            ]
+        )
+        effective_filter = (
+            models.Filter(must=[security_filter, query_filter])
+            if query_filter
+            else security_filter
+        )
+
         search_results = await self._client.query_points(
             collection_name=collection_name,
             query=query_vector,
             using=vector_name,
             limit=limit,
-            query_filter=query_filter,
+            query_filter=effective_filter,
         )
 
         return [
@@ -159,12 +198,18 @@ class QdrantConnector:
                 },
             )
 
-            # Create payload indexes if configured
-
-            if self._field_indexes:
-                for field_name, field_type in self._field_indexes.items():
-                    await self._client.create_payload_index(
-                        collection_name=collection_name,
-                        field_name=field_name,
-                        field_schema=field_type,
-                    )
+        required_indexes = {
+            SCOPE_TYPE_PATH: models.PayloadSchemaType.KEYWORD,
+            SCOPE_ID_PATH: models.PayloadSchemaType.KEYWORD,
+            CREATED_BY_PATH: models.PayloadSchemaType.KEYWORD,
+        }
+        required_indexes.update(self._field_indexes or {})
+        collection = await self._client.get_collection(collection_name)
+        existing_indexes = collection.payload_schema or {}
+        for field_name, field_type in required_indexes.items():
+            if field_name not in existing_indexes:
+                await self._client.create_payload_index(
+                    collection_name=collection_name,
+                    field_name=field_name,
+                    field_schema=field_type,
+                )

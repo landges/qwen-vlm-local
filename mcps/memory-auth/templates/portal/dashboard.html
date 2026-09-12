@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Пространства памяти</h1>
+<p><a class="button" href="{% url 'create_space' %}">Создать пространство</a></p>
+<table>
+  <thead><tr><th>Название</th><th>ID namespace</th><th>Состояние</th></tr></thead>
+  <tbody>
+  {% for space in spaces %}
+    <tr><td>{{ space.name }}</td><td><code>{{ space.id }}</code></td><td>{% if space.is_active %}Активно{% else %}Отключено{% endif %}</td></tr>
+  {% empty %}<tr><td colspan="3">Создайте пространство перед выпуском токена.</td></tr>{% endfor %}
+  </tbody>
+</table>
+
+<h1>Токены MCP</h1>
+{% if spaces %}<p><a class="button" href="{% url 'create_token' %}">Выпустить токен</a></p>{% endif %}
+<table>
+  <thead><tr><th>Название</th><th>Namespace</th><th>Права</th><th>Префикс</th><th>Последнее использование</th><th></th></tr></thead>
+  <tbody>
+  {% for token in tokens %}
+    <tr>
+      <td>{{ token.name }}</td>
+      <td>{% if token.project %}Проект: {{ token.project.name }}{% elif token.memory_space %}Пространство: {{ token.memory_space.name }}{% else %}Недоступно{% endif %}</td>
+      <td>{% if token.can_read %}read {% endif %}{% if token.can_write %}write{% endif %}</td>
+      <td><code>{{ token.prefix }}…</code></td>
+      <td>{{ token.last_used_at|default:"—" }}</td>
+      <td>
+      {% if token.revoked_at %}<span class="muted">Отозван</span>{% else %}
+        <form method="post" action="{% url 'revoke_token' token.id %}">{% csrf_token %}<button class="danger" type="submit">Отозвать</button></form>
+      {% endif %}
+      </td>
+    </tr>
+  {% empty %}<tr><td colspan="6">Токенов пока нет.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endblock %}

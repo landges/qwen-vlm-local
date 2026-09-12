@@ -2,3 +2,6 @@
 .env.integrations
 .env.gitlab
 .env.jira
+.env.memory-auth
+.env.memory-db
+.env.memory-mcp
